@@ -117,5 +117,10 @@ test.describe('line selection and gutter utility', () => {
     expect(await utilityLine()).toBe('2');
     await page.mouse.up();
     expect(await utilityLine()).toBe('2');
+
+    // After the drag ends, hover placement resumes and the utility follows the
+    // pointer again (guards the drag-flag true->false transition).
+    await page.locator(gutterRow(4)).hover();
+    await expect.poll(() => utilityLine()).toBe('4');
   });
 });

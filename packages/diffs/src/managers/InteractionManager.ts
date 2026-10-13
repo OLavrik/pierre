@@ -477,8 +477,14 @@ export class InteractionManager<TMode extends InteractionManagerMode> {
     // extending a native text selection. While that drag runs, hover-driven
     // gutter-utility placement must not move the utility node (see
     // `nativeTextDragActive` / `placeUtility`).
-    this.nativeTextDragActive =
-      event.buttons !== 0 && this.pointerSession.mode === 'idle';
+    const wasNativeTextDrag = this.nativeTextDragActive;
+    this.nativeTextDragActive = this.isNativeTextDrag(event);
+    // When the drag ends on the same line as its last held-button move,
+    // `handlePointerEvent` sees `sameLine` and skips its own `placeUtility()`,
+    // which would leave the utility stuck on the pre-drag row. Re-place once the
+    // drag flag clears so hover placement resumes immediately.
+    const nativeTextDragJustEnded =
+      wasNativeTextDrag && !this.nativeTextDragActive;
 
     const {
       lineHoverHighlight = 'disabled',
@@ -507,7 +513,18 @@ export class InteractionManager<TMode extends InteractionManagerMode> {
     // should we perhaps throttle this a bit because move can be fast as fuk
     // boiiii
     this.handlePointerEvent({ eventType: 'move', event });
+    if (nativeTextDragJustEnded) {
+      this.placeUtility();
+    }
   };
+
+  // A native text-selection drag is a held mouse button with no pierre
+  // gutter/line-selection session owning the pointer. Used to freeze
+  // gutter-utility placement so its node is not re-parented under the drag
+  // (pierre#1184).
+  private isNativeTextDrag(event: PointerEvent): boolean {
+    return event.buttons !== 0 && this.pointerSession.mode === 'idle';
+  }
 
   handlePointerLeave = (event: PointerEvent): void => {
     const { __debugPointerEvents } = this.options;
@@ -516,6 +533,11 @@ export class InteractionManager<TMode extends InteractionManagerMode> {
       'move',
       'FileDiff.DEBUG.handlePointerLeave: no event'
     );
+    // Arm the native-drag guard before any placement runs below. A drag whose
+    // first sampled move already lands outside the `<pre>` reaches here (not
+    // `handlePointerMove`), and the `placeUtility()` at the end would otherwise
+    // remove/reparent the utility under the active native selection.
+    this.nativeTextDragActive = this.isNativeTextDrag(event);
     if (this.hoveredLine == null && this.hoveredToken == null) {
       debugLogIfEnabled(
         __debugPointerEvents,
